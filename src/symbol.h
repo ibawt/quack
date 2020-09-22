@@ -10,6 +10,7 @@ extern "C" {
 q_symbol q_symbol_create(const char *);
 q_symbol q_symbol_create_buffer(char *, size_t);
 const char* q_symbol_string(q_symbol sym);
+q_symbol q_gensym(const char *);
 
 #ifdef __cplusplus
 }

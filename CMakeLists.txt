@@ -47,6 +47,8 @@ set(files
   src/map.c
   src/env.c
   src/vector.c
+  src/engine.c
+  src/cps.c
   )
 
 add_executable(quack ${main} ${files})

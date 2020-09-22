@@ -19,6 +19,9 @@ typedef enum {
 
 typedef bool q_bool;
 
+#define q_true true
+#define q_false false
+
 typedef enum {
   NUMBER = 0,
   CONS,
@@ -29,6 +32,8 @@ typedef enum {
   LAMBDA,
   ENV
 } q_atom_type;
+
+
 
 typedef enum { USED = 1, LOCKED = 2 } q_heap_flag;
 
@@ -48,6 +53,8 @@ typedef int q_symbol;
 
 typedef uintptr_t q_atom;
 
+q_bool q_atom_is_literal(q_atom);
+
 typedef struct _cons {
   q_atom car;
   struct _cons *cdr;
@@ -55,7 +62,7 @@ typedef struct _cons {
 
 typedef struct {
   size_t len;
-  char data[];
+  char   data[];
 } q_string;
 
 typedef struct {
@@ -63,7 +70,7 @@ typedef struct {
   size_t      size;
   q_heap_flag flags;
   int         _pad;
-  char buff[];
+  char        buff[];
 } q_heap_node;
 
 q_atom_type q_atom_type_of(q_atom a);
@@ -75,13 +82,15 @@ q_atom make_string(q_string *s);
 
 q_atom make_cons(q_cons *q);
 
-q_atom make_nil(void);
+#define make_nil() TAG_NIL
 
 q_atom make_boolean(q_bool b);
 
 q_atom make_symbol(q_symbol sym);
 
-void q_atom_print(FILE*, q_atom);
+int q_atom_print(FILE*, q_atom);
+
+void q_dbg(const char *prefix, q_atom a);
 
 q_bool q_equals(q_atom a, q_atom b);
 

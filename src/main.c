@@ -1,39 +1,32 @@
-#include <stdio.h>
-#include <readline/readline.h>
 #include <readline/history.h>
+#include <readline/readline.h>
+#include <stdio.h>
+#include <stdlib.h>
 
-#include "parser.h"
-#include "compiler.h"
-#include "env.h"
+#include "engine.h"
 
 int main(void) {
-  q_memory *memory = q_memory_create();
-  q_env *env = q_env_create(NULL);
+  q_engine* engine = q_engine_create();
 
-  for(;;) {
+  for (;;) {
     char *line = readline(">");
 
-    if(!line)
+    if (!line)
       break;
 
     q_atom atom;
-    q_err err = q_parse_buffer(memory, line, strlen(line), &atom);
-    if( err ) {
+    q_err err = q_engine_eval_string(engine, line, &atom);
+    free(line);
+    if (err) {
       printf("ERROR: %d\n", err);
       continue;
     }
 
     q_atom_print(stdout, atom);
     printf("\n");
-
-    main_func f = compile(atom);
-
-    int i = f();
-
-    printf("i = %d\n", i);
+    fflush(stdout);
   }
-  q_memory_destroy(memory);
-  q_env_destroy(env);
+  q_engine_destroy(engine);
 
   return 0;
 }

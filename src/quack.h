@@ -14,6 +14,8 @@ extern "C" {
 #include "vector.h"
 #include "map.h"
 
+void q_init(void);
+
 #ifdef __cplusplus
 }
 #endif

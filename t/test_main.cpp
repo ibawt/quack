@@ -1,5 +1,6 @@
 #include "gtest/gtest.h"
 #include "quack.h"
+#include "cps.h"
 
 static void run_test_case(const char* s, q_atom b)
 {

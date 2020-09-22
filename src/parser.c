@@ -1,13 +1,13 @@
+#include <ctype.h>
+#include <errno.h>
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <limits.h>
-#include <errno.h>
 #include <sys/stat.h>
-#include <ctype.h>
 
 #include "parser.h"
-#include "vector.h"
 #include "symbol.h"
+#include "vector.h"
 #include <string.h>
 
 typedef struct {
@@ -16,26 +16,25 @@ typedef struct {
   char *data;
 } buffer;
 
-static int peek(buffer *b)  {
-  if( b->pos >= b->len ) {
+static int peek(buffer *b) {
+  if (b->pos >= b->len) {
     return EOF;
   }
   return b->data[b->pos];
 }
 
 static int next(buffer *b) {
-  if( b->pos >= b->len) {
+  if (b->pos >= b->len) {
     return EOF;
   }
 
   return b->data[b->pos++];
 }
 
-static void read_to_newline(buffer *b)
-{
-  for(;;) {
-    int c  = peek(b);
-    if( c == EOF )
+static void read_to_newline(buffer *b) {
+  for (;;) {
+    int c = peek(b);
+    if (c == EOF)
       return;
     next(b);
     if (c == '\n') {
@@ -46,18 +45,18 @@ static void read_to_newline(buffer *b)
 
 static q_err read_file(const char *filename, buffer *b) {
   struct stat st;
-  if(stat(filename, &st)) {
+  if (stat(filename, &st)) {
     return 1;
   }
 
-  char *buff = malloc(sizeof(char)* st.st_size);
+  char *buff = malloc(sizeof(char) * st.st_size);
 
   FILE *file = fopen(filename, "r");
   if (!file) {
     return 1;
   }
 
-  if(fread(buff, sizeof(char), st.st_size, file) != (unsigned)st.st_size) {
+  if (fread(buff, sizeof(char), st.st_size, file) != (unsigned)st.st_size) {
     fclose(file);
     free(buff);
     return 1;
@@ -72,9 +71,8 @@ static q_err read_file(const char *filename, buffer *b) {
   return q_ok;
 }
 
-static q_err quote_atom(q_memory *mem, q_atom a, q_atom *ret)
-{
-  q_cons* cons = q_memory_alloc_cons(mem, a, NULL);
+static q_err quote_atom(q_memory *mem, q_atom a, q_atom *ret) {
+  q_cons *cons = q_memory_alloc_cons(mem, a, NULL);
   cons = q_memory_alloc_cons(mem, q_symbol_create("quote"), cons);
 
   *ret = make_cons(cons);
@@ -84,25 +82,23 @@ static q_err quote_atom(q_memory *mem, q_atom a, q_atom *ret)
 
 static q_err parse_atom(q_memory *mem, buffer *b, q_atom *ret);
 
-static q_err parse_list(q_memory *mem, buffer *b, q_atom *ret)
-{
+static q_err parse_list(q_memory *mem, buffer *b, q_atom *ret) {
   q_vec *list = q_vec_create(16);
 
-  for(;;) {
+  for (;;) {
     int c = peek(b);
-    if( c == ')') {
+    if (c == ')') {
       next(b);
       break;
-    } else if(c == EOF) {
+    } else if (c == EOF) {
       q_vec_destroy(list);
       return EOF;
-    }
-    else {
-      if( isspace(c)) {
+    } else {
+      if (isspace(c)) {
         next(b);
       } else {
         q_atom a;
-        if( parse_atom(mem, b, &a)) {
+        if (parse_atom(mem, b, &a)) {
           q_vec_destroy(list);
           return 1;
         }
@@ -112,7 +108,7 @@ static q_err parse_list(q_memory *mem, buffer *b, q_atom *ret)
   }
 
   q_cons *head = NULL;
-  for(int i = list->len - 1 ; i >= 0 ; --i) {
+  for (int i = list->len - 1; i >= 0; --i) {
     head = q_memory_alloc_cons(mem, list->values[i], head);
   }
   q_vec_destroy(list);
@@ -128,41 +124,38 @@ typedef struct {
   int len;
 } char_vector;
 
-void char_add(char_vector *v, char c)
-{
-  if(!v->data) {
+void char_add(char_vector *v, char c) {
+  if (!v->data) {
     v->data = malloc(64);
     v->len = 0;
     v->size = 64;
   }
 
-  if( v->len >= v->size ) {
-    v->data = realloc(v->data, v->size*2);
+  if (v->len >= v->size) {
+    v->data = realloc(v->data, v->size * 2);
     v->size *= 2;
   }
 
   v->data[v->len++] = c;
 }
 
-static q_err read_string(q_memory *mem, buffer *b, q_atom *ret)
-{
+static q_err read_string(q_memory *mem, buffer *b, q_atom *ret) {
   char_vector chars = {0};
 
-  for (;; ) {
+  for (;;) {
     int c = peek(b);
-    switch(c) {
+    switch (c) {
     case '\\': {
       next(b);
       int c = peek(b);
-      switch(c) {
+      switch (c) {
       case EOF:
         free(chars.data);
         return 1;
       default:
         char_add(&chars, c);
       }
-    }
-      break;
+    } break;
     case '"':
       next(b);
       *ret = make_string(q_memory_alloc_string(mem, chars.data, chars.len));
@@ -174,16 +167,15 @@ static q_err read_string(q_memory *mem, buffer *b, q_atom *ret)
   }
 }
 
-static q_err parse_integer(buffer *b, int64_t *ret)
-{
+static q_err parse_integer(buffer *b, int64_t *ret) {
   char *end;
 
   errno = 0;
   long long i = strtoll(b->data + b->pos, &end, 0);
-  if(errno) {
+  if (errno) {
     return q_fail;
   }
-  if( b->data[b->pos] && end != b->data + b->pos) {
+  if (b->data[b->pos] && end != b->data + b->pos) {
     *ret = i;
 
     return q_ok;
@@ -191,19 +183,18 @@ static q_err parse_integer(buffer *b, int64_t *ret)
   return q_fail;
 }
 
-static q_err next_token(const buffer *b, size_t *ret)
-{
+static q_err next_token(const buffer *b, size_t *ret) {
   size_t len = 0;
-  for(; len < b->len ;) {
+  for (; len < b->len;) {
     int c = b->data[b->pos + len];
 
-    if( c == EOF) {
-      if(len > 0) {
+    if (c == EOF) {
+      if (len > 0) {
         *ret = len;
         return q_ok;
       }
       return q_fail;
-    } else if( !isspace(c) && c != ')') {
+    } else if (!isspace(c) && c != ')') {
       len++;
     } else {
       *ret = len;
@@ -214,44 +205,42 @@ static q_err next_token(const buffer *b, size_t *ret)
   return q_ok;
 }
 
-static q_bool string_equals(const char *s, char *buff, size_t len)
-{
-  for(unsigned i = 0 ; i < len ; ++i) {
-    if(!s[i]) {
+static q_bool string_equals(const char *s, char *buff, size_t len) {
+  for (unsigned i = 0; i < len; ++i) {
+    if (!s[i]) {
       return true;
     }
-    if(s[i] != buff[i]) {
+    if (s[i] != buff[i]) {
       return false;
     }
   }
   return false;
 }
 
-static q_err read_atom(q_memory *mem, buffer *b, q_atom *ret)
-{
-  if( peek(b) == '"') {
+static q_err read_atom(q_memory *mem, buffer *b, q_atom *ret) {
+  if (peek(b) == '"') {
     next(b);
     return read_string(mem, b, ret);
   }
 
   size_t next_end;
-  if( next_token(b, &next_end)) {
+  if (next_token(b, &next_end)) {
     return q_fail;
   }
-  if( !next_end ) {
+  if (!next_end) {
     return q_fail;
   }
 
-  if(string_equals("nil", b->data + b->pos, next_end)) {
+  if (string_equals("nil", b->data + b->pos, next_end)) {
     return make_nil();
-  } else if(string_equals("#t", b->data + b->pos, next_end)) {
+  } else if (string_equals("#t", b->data + b->pos, next_end)) {
     return make_boolean(true);
-  } else if(string_equals("#f", b->data + b->pos, next_end)) {
+  } else if (string_equals("#f", b->data + b->pos, next_end)) {
     return make_boolean(false);
   }
 
   int64_t i;
-  if(!parse_integer(b, &i)) {
+  if (!parse_integer(b, &i)) {
     *ret = make_integer(i);
   } else {
     *ret = make_symbol(q_symbol_create_buffer(b->data + b->pos, next_end));
@@ -262,25 +251,23 @@ static q_err read_atom(q_memory *mem, buffer *b, q_atom *ret)
   return q_ok;
 }
 
-static q_err parse_atom(q_memory *mem, buffer *b, q_atom *ret)
-{
-  for(;;) {
+static q_err parse_atom(q_memory *mem, buffer *b, q_atom *ret) {
+  for (;;) {
     int c = peek(b);
-    switch(c) {
+    switch (c) {
     case EOF:
       return 1;
     case '\'': {
       next(b);
       q_atom a;
 
-      if(parse_atom(mem, b, &a)) {
+      if (parse_atom(mem, b, &a)) {
         return 1;
       }
-      if(quote_atom(mem, a, ret) ) {
+      if (quote_atom(mem, a, ret)) {
         return 1;
       }
-    }
-      break;
+    } break;
     case '(':
       next(b);
       return parse_list(mem, b, ret);
@@ -290,20 +277,20 @@ static q_err parse_atom(q_memory *mem, buffer *b, q_atom *ret)
       break;
     case ',': {
       next(b);
-      if( peek(b) == '@') {
+      if (peek(b) == '@') {
         next(b);
         q_atom a;
-        if( parse_atom(mem, b, &a) ) {
+        if (parse_atom(mem, b, &a)) {
           return 1;
         }
-        q_cons * head = NULL;
+        q_cons *head = NULL;
         head = q_memory_alloc_cons(mem, a, head);
         head = q_memory_alloc_cons(mem, q_symbol_create("splice"), head);
         *ret = make_cons(head);
         return q_ok;
       } else {
         q_atom a;
-        if(parse_atom(mem, b, &a)) {
+        if (parse_atom(mem, b, &a)) {
           return 1;
         }
         q_cons *head = q_memory_alloc_cons(mem, a, NULL);
@@ -311,10 +298,9 @@ static q_err parse_atom(q_memory *mem, buffer *b, q_atom *ret)
         *ret = make_cons(head);
         return q_ok;
       }
-    }
-      break;
+    } break;
     default:
-      if(isspace(c)) {
+      if (isspace(c)) {
         next(b);
       } else {
         return read_atom(mem, b, ret);
@@ -323,23 +309,21 @@ static q_err parse_atom(q_memory *mem, buffer *b, q_atom *ret)
   }
 }
 
-q_err q_parse_buffer(q_memory* mem, const char* data, size_t len, q_atom *ret) {
-  buffer b = { .data = (char *)data, .len = len, .pos = 0};
+q_err q_parse_buffer(q_memory *mem, const char *data, size_t len, q_atom *ret) {
+  buffer b = {.data = (char *)data, .len = len, .pos = 0};
 
   return parse_atom(mem, &b, ret);
 }
 
-
-q_err q_parse_file(q_memory *mem, const char *filename, q_atom *ret)
-{
+q_err q_parse_file(q_memory *mem, const char *filename, q_atom *ret) {
   assert(ret);
   buffer b = {0};
 
-  if(read_file(filename, &b) ) {
+  if (read_file(filename, &b)) {
     return 1;
   }
 
-  if( parse_atom(mem, &b, ret)) {
+  if (parse_atom(mem, &b, ret)) {
     free(b.data);
     return 1;
   }

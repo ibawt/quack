@@ -15,15 +15,15 @@ typedef struct {
 
 static node *intern_map = NULL;
 
-static q_symbol intern(const char *s)
+static q_symbol intern(char *s, size_t len)
 {
     node *n;
 
-    HASH_FIND_STR(intern_map, s, n);
+    HASH_FIND(hh, intern_map, s, len,  n);
 
     if(!n) {
         n = malloc(sizeof(node));
-        n->key = strdup(s);
+        n->key = strndup(s, len);
         n->index = table_len;
         HASH_ADD_KEYPTR(hh, intern_map, n->key, strlen(n->key), n);
 
@@ -43,21 +43,27 @@ static q_symbol intern(const char *s)
 }
 
 q_symbol q_symbol_create(const char *s) {
-    return intern(s);
+  return intern((char*)s, strlen(s));
 }
 
 q_symbol q_symbol_create_buffer(char *b, size_t len)
 {
-    char *s = (char *)malloc(len+1);
-    memcpy(s, b, len);
-    s[len] = 0;
-
-    q_symbol sym =  intern(s);
-    free(s);
-    return sym;
+  return intern(b, len);
 }
 
 const char* q_symbol_string(q_symbol s) {
   return table[s];
 }
 
+q_symbol q_gensym(const char *s) {
+  static uint64_t last = 0;
+  char buff[1024];
+
+  if( !s ) {
+    s = "gensym-";
+  }
+
+  snprintf(buff, sizeof(buff), "%s-%ld", s, last++);
+
+  return q_symbol_create(buff);
+}
