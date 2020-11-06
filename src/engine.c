@@ -27,6 +27,7 @@ void q_engine_destroy(q_engine *e)
   q_memory_destroy(e->memory);
   q_env_destroy(e->env);
 
+
   free(e);
 }
 

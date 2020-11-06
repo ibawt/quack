@@ -17,6 +17,9 @@ typedef enum {
   q_fail = 1,
 } q_err;
 
+#define Q_FAILED(x) ( x == q_fail )
+#define Q_OK(x) ( x == q_ok )
+
 typedef bool q_bool;
 
 #define q_true true
@@ -80,8 +83,7 @@ int64_t q_atom_integer(q_atom a);
 
 q_atom make_string(q_string *s);
 
-q_atom make_cons(q_cons *q);
-
+#define make_cons(q) ((q_atom)q)
 #define make_nil() TAG_NIL
 
 q_atom make_boolean(q_bool b);
@@ -91,6 +93,8 @@ q_atom make_symbol(q_symbol sym);
 int q_atom_print(FILE*, q_atom);
 
 void q_dbg(const char *prefix, q_atom a);
+
+size_t q_cons_length(q_cons *);
 
 q_bool q_equals(q_atom a, q_atom b);
 

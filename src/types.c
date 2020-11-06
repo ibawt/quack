@@ -49,7 +49,7 @@ q_string* q_atom_string(q_atom a)
 
 q_atom make_string(q_string *s) { return (q_atom)s; }
 
-q_atom make_cons(q_cons *q) { return (q_atom)q; }
+/* q_atom make_cons(q_cons *q) { return (q_atom)q; } */
 
 q_atom make_boolean(q_bool b) { return TAG_BOOL | b << TAG_BITS; }
 
@@ -147,4 +147,11 @@ void q_dbg(const char *prefix, q_atom a)
   printf("%s: ", prefix);
   q_atom_print(stdout, a);
   putchar('\n');
+}
+
+size_t q_cons_length(q_cons *c)
+{
+  size_t i = 0;
+  for( ; c ; c = c->cdr, ++i);
+  return i;
 }

@@ -65,7 +65,7 @@ static q_atom make_list(q_memory *m, ...)
   va_start(args, m);
   q_vec *v = q_vec_create(6);
 
-  while(1) {
+  for(;;) {
     q_atom a = va_arg(args, q_atom);
     if (a == make_nil()) {
       break;
@@ -86,7 +86,7 @@ static q_atom make_list(q_memory *m, ...)
 static q_atom append_atom(q_memory *m, q_cons *c, q_atom a)
 {
   for( ; c ; c = c->cdr ) {
-    if( c->cdr == NULL) {
+    if(!c->cdr) {
       q_cons *c = q_memory_alloc_cons(m, a, NULL);
       c->cdr = c;
     }
@@ -145,6 +145,10 @@ q_err q_cps_transform_k(q_memory *m, q_atom a, q_atom cont, q_atom *r)
   return q_fail;
 }
 
+q_err cps_star_k(q_memory *m, q_cons* c, q_atom *r)
+{
+}
+
 q_err q_cps_transform(q_memory *m, q_atom a, q_atom cont, q_atom *r)
 {
   q_dbg("CPS", a);
@@ -169,6 +173,9 @@ q_err q_cps_transform(q_memory *m, q_atom a, q_atom cont, q_atom *r)
     }
     else if(q_equals(c->car, symbol("if"))) {
       q_symbol k = q_gensym("k");
+      if(q_cons_length(c) < 3 ) {
+        return q_false;
+      }
       q_atom condition = c->cdr->car;
       q_atom texpr = c->cdr->cdr->car;
       q_atom fexpr = c->cdr->cdr->cdr->car;
