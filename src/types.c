@@ -57,7 +57,7 @@ q_atom make_symbol(q_symbol sym) { return TAG_SYMBOL | sym << TAG_BITS; }
 
 int q_atom_print(FILE* file, q_atom atom)
 {
-  /* fprintf(file, "[RAW:%p]:", (void*)atom); */
+  q_atom_type t = q_atom_type_of(atom);
   switch(q_atom_type_of(atom)) {
   case NUMBER:
     return fprintf(file, "%ld", q_atom_integer(atom));
@@ -87,6 +87,8 @@ int q_atom_print(FILE* file, q_atom atom)
     return fprintf(file, "lambda");
   case ENV:
     return fprintf(file, "env");
+  default:
+    return fprintf(file, "idk: %d", t);
   }
 }
 
@@ -128,6 +130,10 @@ q_bool q_equals(q_atom a, q_atom b)
   default:
     return a == b;
   }
+}
+
+q_cons *q_atom_as_cons(q_atom a) {
+  return (q_cons*)a;
 }
 
 q_bool q_atom_is_literal(q_atom a)

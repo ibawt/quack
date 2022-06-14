@@ -3,9 +3,15 @@
 
 #include "types.h"
 #include "env.h"
+#include "memory.h"
 
-typedef q_atom (*main_func)(q_env*);
+typedef q_atom (*qmain_func)(q_env*);
 
-main_func compile(q_atom a);
+typedef struct q_compiler q_compiler;
+
+q_compiler* q_compiler_create(q_memory* mem);
+void        q_compiler_destroy(q_compiler*);
+
+qmain_func q_compile(q_compiler* c, q_atom a);
 
 #endif

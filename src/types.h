@@ -76,6 +76,9 @@ typedef struct {
   char        buff[];
 } q_heap_node;
 
+q_cons* q_atom_as_cons(q_atom a);
+
+/* these names are all a mess */
 q_atom_type q_atom_type_of(q_atom a);
 q_atom make_integer(const int64_t i);
 
@@ -88,15 +91,18 @@ q_atom make_string(q_string *s);
 
 q_atom make_boolean(q_bool b);
 
+q_symbol q_atom_symbol(q_atom a);
 q_atom make_symbol(q_symbol sym);
 
-int q_atom_print(FILE*, q_atom);
+int q_atom_print(FILE *, q_atom);
 
 void q_dbg(const char *prefix, q_atom a);
 
 size_t q_cons_length(q_cons *);
 
 q_bool q_equals(q_atom a, q_atom b);
+
+#define SYM(x) make_symbol( q_symbol_create( x) )
 
 #ifdef __cplusplus
 }

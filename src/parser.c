@@ -7,6 +7,7 @@
 
 #include "parser.h"
 #include "symbol.h"
+#include "types.h"
 #include "vector.h"
 #include <string.h>
 
@@ -46,7 +47,7 @@ static void read_to_newline(buffer *b) {
 static q_err read_file(const char *filename, buffer *b) {
   struct stat st;
   if (stat(filename, &st)) {
-    return 1;
+    return q_fail;
   }
 
   char *buff = malloc(sizeof(char) * st.st_size);
@@ -73,7 +74,7 @@ static q_err read_file(const char *filename, buffer *b) {
 
 static q_err quote_atom(q_memory *mem, q_atom a, q_atom *ret) {
   q_cons *cons = q_memory_alloc_cons(mem, a, NULL);
-  cons = q_memory_alloc_cons(mem, q_symbol_create("quote"), cons);
+  cons = q_memory_alloc_cons(mem, make_symbol(q_symbol_create("quote")), cons);
 
   *ret = make_cons(cons);
 
@@ -145,13 +146,14 @@ static q_err read_string(q_memory *mem, buffer *b, q_atom *ret) {
   for (;;) {
     int c = peek(b);
     switch (c) {
+    case EOF:
+      goto FAIL;
     case '\\': {
       next(b);
       int c = peek(b);
       switch (c) {
       case EOF:
-        free(chars.data);
-        return 1;
+        goto FAIL;
       default:
         char_add(&chars, c);
       }
@@ -163,8 +165,13 @@ static q_err read_string(q_memory *mem, buffer *b, q_atom *ret) {
       return q_ok;
     default:
       char_add(&chars, c);
+      next(b);
+      break;
     }
   }
+FAIL:
+  free(chars.data);
+  return q_fail;
 }
 
 static q_err parse_integer(buffer *b, int64_t *ret) {
@@ -232,11 +239,14 @@ static q_err read_atom(q_memory *mem, buffer *b, q_atom *ret) {
   }
 
   if (string_equals("nil", b->data + b->pos, next_end)) {
-    return make_nil();
+    *ret = make_nil();
+    return q_ok;
   } else if (string_equals("#t", b->data + b->pos, next_end)) {
-    return make_boolean(true);
+    *ret = make_boolean(true);
+    return q_ok;
   } else if (string_equals("#f", b->data + b->pos, next_end)) {
-    return make_boolean(false);
+    *ret = make_boolean(false);
+    return q_ok;
   }
 
   int64_t i;
@@ -262,11 +272,12 @@ static q_err parse_atom(q_memory *mem, buffer *b, q_atom *ret) {
       q_atom a;
 
       if (parse_atom(mem, b, &a)) {
-        return 1;
+        return q_fail;
       }
       if (quote_atom(mem, a, ret)) {
-        return 1;
+        return q_fail;
       }
+      return q_ok;
     } break;
     case '(':
       next(b);

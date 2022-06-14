@@ -22,6 +22,7 @@ int main(void) {
       continue;
     }
 
+    printf("output: ");
     q_atom_print(stdout, atom);
     printf("\n");
     fflush(stdout);

@@ -1,143 +1,275 @@
-/*
-** This file has been pre-processed with DynASM.
-** http://luajit.org/dynasm.html
-** DynASM version 1.3.0, DynASM x64 version 1.3.0
-** DO NOT EDIT! The original file is in "../src/compiler.dynasm".
-*/
-
-#line 1 "../src/compiler.dynasm"
-#define DASM_CHECKS 1
-#include "dasm_proto.h"
-#include "dasm_x86.h"
+#include <stdlib.h>
+#include <string.h>
+#include "env.h"
+#include "memory.h"
+#include "symbol.h"
 #include "types.h"
 #include "compiler.h"
-#include <sys/mman.h> 
-#include "symbol.h" 
-#if !defined(MAP_ANONYMOUS) && defined(MAP_ANON)
-#define MAP_ANONYMOUS MAP_ANON
-#endif
 
-//|.arch x64
-#if DASM_VERSION != 10300
-#error "Version mismatch between DynASM and included encoding engine"
-#endif
-#line 13 "../src/compiler.dynasm"
+#include "libgccjit.h"
 
-static void* link_and_encode(dasm_State** d)
-{
-  size_t sz;
-  void* buf;
-  dasm_link(d, &sz);
-#ifdef _WIN32
-  buf = VirtualAlloc(0, sz, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
-#else
-  buf = mmap(0, sz, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-#endif
-  dasm_encode(d, buf);
-#ifdef _WIN32
-  {DWORD dwOld; VirtualProtect(buf, sz, PAGE_EXECUTE_READ, &dwOld); }
-#else
-  mprotect(buf, sz, PROT_READ | PROT_EXEC);
-#endif
-  return buf;
+struct q_compiler {
+  gcc_jit_context *ctx;
+  gcc_jit_type    *atom_type;
+  gcc_jit_type    *void_ptr;
+  gcc_jit_struct  *string_type;
+
+  gcc_jit_struct  *cons_type;
+  gcc_jit_field   *cons_params[2];
+
+  int counter;
+  q_memory        *q_mem;
+
+
+  gcc_jit_function *env_get;
+  gcc_jit_function *cons;
+  gcc_jit_function *car;
+
+  gcc_jit_function *current_func;
+  gcc_jit_block    *current_block;
+};
+
+
+static gcc_jit_rvalue* cast_pointer_to_atom(q_compiler *c, gcc_jit_rvalue* p) {
+  return gcc_jit_context_new_binary_op(
+      c->ctx, NULL, GCC_JIT_BINARY_OP_BITWISE_AND, c->atom_type, p, p);
 }
 
-static void test(dasm_State **Dst)
-{
-//|mov64 rax, make_integer(42)
-//|ret
-dasm_put(Dst, 0, (unsigned int)(make_integer(42)), (unsigned int)((make_integer(42))>>32));
-#line 37 "../src/compiler.dynasm"
+static gcc_jit_rvalue *
+compile_string(q_compiler *c, q_atom a) {
+  q_string *s = (q_string*)a;
+
+  return cast_pointer_to_atom(c, gcc_jit_context_new_rvalue_from_ptr(
+      c->ctx, gcc_jit_type_get_pointer(
+          gcc_jit_struct_as_type(c->string_type)), s));
 }
 
-static q_err compile_atom(dasm_State **Dst, q_atom a)
-{
-  //|.define envPtr, rdi
-  //|.section code, imports
-#define DASM_SECTION_CODE	0
-#define DASM_SECTION_IMPORTS	1
-#define DASM_MAXSECTION		2
-#line 43 "../src/compiler.dynasm"
-  //|.macro call_extern, target
-  //|  .imports
-  //|  ->__imp__..target:
-  //|  .dword (uint32_t)target
-  //|  .dword ((uint64_t)target)>>32
-  //|  .code
-  //|  call qword [->__imp__..target]
-  //|.endmacro
-  //|.macro return, value
-  //|.code
-  //|move64 rax, value
-  //|ret
-  //|.endmacro
-  switch(q_atom_type_of(a)) {
+q_atom env_get(q_env* env, q_atom key) {
+  q_atom res;
+
+  if( q_env_lookup(env, q_atom_symbol(key), &res)) {
+    return make_nil();
+  }
+  return res;
+}
+
+gcc_jit_function* env_get_native(q_compiler *c) {
+  gcc_jit_param *fn_params[] = {
+    gcc_jit_context_new_param(c->ctx, NULL, gcc_jit_context_get_type(c->ctx, GCC_JIT_TYPE_VOID_PTR), "env"),
+    gcc_jit_context_new_param(c->ctx, NULL, c->atom_type, "key")
+  };
+
+  gcc_jit_function* fn = gcc_jit_context_new_function(c->ctx, NULL, GCC_JIT_FUNCTION_ALWAYS_INLINE, c->atom_type, "env_get_0", 2, fn_params , 0);
+
+  gcc_jit_block* entry  = gcc_jit_function_new_block(fn, "entry");
+
+  gcc_jit_lvalue* res = gcc_jit_function_new_local(fn, NULL, c->atom_type, "res");
+
+  gcc_jit_block* then = gcc_jit_function_new_block(fn, "then");
+  gcc_jit_block* else_b = gcc_jit_function_new_block(fn, "else");
+
+  gcc_jit_param *params[] = {
+      gcc_jit_context_new_param(
+          c->ctx, NULL, gcc_jit_context_get_type(c->ctx, GCC_JIT_TYPE_VOID_PTR),
+          "env"),
+      gcc_jit_context_new_param(c->ctx, NULL, c->atom_type, "key"),
+      gcc_jit_context_new_param(c->ctx, NULL, gcc_jit_type_get_pointer(c->atom_type), "res")
+  };
+
+  gcc_jit_function* func =  gcc_jit_context_new_function(c->ctx, NULL, GCC_JIT_FUNCTION_IMPORTED,
+                                                         c->atom_type, "env_get",
+                                                         3, params, 0);
+
+  gcc_jit_rvalue *func_params[] = {
+      gcc_jit_param_as_rvalue(gcc_jit_function_get_param(fn, 0)),
+      gcc_jit_param_as_rvalue(gcc_jit_function_get_param(fn, 1)),
+      gcc_jit_lvalue_get_address(res, NULL)};
+
+  gcc_jit_rvalue* func_result = gcc_jit_context_new_call(c->ctx, NULL, func, 3, func_params);
+
+  gcc_jit_rvalue* pred = gcc_jit_context_new_comparison(c->ctx, NULL, GCC_JIT_COMPARISON_EQ, gcc_jit_context_zero(c->ctx, c->atom_type), func_result);
+
+  gcc_jit_block_end_with_conditional(entry, NULL, pred, then, else_b);
+
+  gcc_jit_block_end_with_return(then, NULL, gcc_jit_lvalue_as_rvalue(res));
+  gcc_jit_block_end_with_return(else_b, NULL, gcc_jit_context_new_rvalue_from_long(c->ctx, c->atom_type, make_nil()));
+
+  return fn;
+}
+
+static gcc_jit_function* native_cons(q_compiler *c) {
+  gcc_jit_param *params[] = {
+    gcc_jit_context_new_param(c->ctx, NULL, c->void_ptr, "memory"),
+    gcc_jit_context_new_param(c->ctx, NULL, c->atom_type, "head"),
+    gcc_jit_context_new_param(c->ctx, NULL, c->atom_type, "tail")
+  };
+
+  gcc_jit_function *fn = gcc_jit_context_new_function(c->ctx, NULL, GCC_JIT_FUNCTION_IMPORTED, c->void_ptr, "q_memory_alloc_cons", 3, params, 0);
+  return fn ;
+}
+
+static gcc_jit_function*
+compile_cons(q_compiler *c) {
+  gcc_jit_param *params[] = {
+    gcc_jit_context_new_param(c->ctx, NULL, c->void_ptr, "env"),
+    gcc_jit_context_new_param(c->ctx, NULL, c->atom_type, "head"),
+    gcc_jit_context_new_param(c->ctx, NULL, c->atom_type, "tail")
+  };
+
+  gcc_jit_function* alloc_cons = native_cons(c); 
+
+  gcc_jit_function *fn = gcc_jit_context_new_function(c->ctx, NULL, GCC_JIT_FUNCTION_ALWAYS_INLINE, c->atom_type, "cons", 3, params, 0);
+
+  gcc_jit_block *b = gcc_jit_function_new_block(fn, "entry");
+
+  gcc_jit_lvalue *res = gcc_jit_function_new_local(fn, NULL, c->void_ptr, "tmp");
+
+  gcc_jit_rvalue *pparams[] = {
+    gcc_jit_param_as_rvalue( params[0]),
+    gcc_jit_param_as_rvalue( params[1]),
+    gcc_jit_param_as_rvalue( params[2])
+  };
+
+  gcc_jit_rvalue* call_res = gcc_jit_context_new_call(c->ctx, NULL, alloc_cons, 3, pparams);
+
+  gcc_jit_block_add_assignment(b, NULL, res, call_res);
+
+
+  gcc_jit_rvalue* p =  cast_pointer_to_atom( c, gcc_jit_lvalue_as_rvalue(res));
+
+  gcc_jit_block_end_with_return(b, NULL, p);
+
+  return fn;
+}
+
+static gcc_jit_function *
+compile_car(q_compiler *c)    {
+  gcc_jit_param *param = gcc_jit_context_new_param(c->ctx, NULL, c->atom_type, "a");
+  gcc_jit_function *fn = gcc_jit_context_new_function(c->ctx, NULL, GCC_JIT_FUNCTION_ALWAYS_INLINE, c->atom_type, "car", 1, &param, 0);
+
+  gcc_jit_block *b = gcc_jit_function_new_block(fn, "entry");
+
+  gcc_jit_rvalue* = gcc_jit
+
+  gcc_jit_rvalue* car = gcc_jit_rvalue_access_field( r, NULL, c->cons_params[0]);
+
+  gcc_jit_block_end_with_return(b, NULL, car);
+
+  return fn;
+}
+
+static gcc_jit_rvalue*
+compile_atom(q_compiler* ctx, q_atom a) {
+  q_dbg("compile_atom", a);
+  switch (q_atom_type_of(a)) {
+  case NUMBER:
+    return gcc_jit_context_new_rvalue_from_int(ctx->ctx, ctx->atom_type, a);
+  case SYMBOL: {
+    gcc_jit_rvalue *env = gcc_jit_param_as_rvalue(gcc_jit_function_get_param(ctx->current_func, 0));
+
+    gcc_jit_rvalue *params[] = { env, gcc_jit_context_new_rvalue_from_int(ctx->ctx, ctx->atom_type, a)};
+    return gcc_jit_context_new_call(ctx->ctx, NULL, ctx->env_get, 2, params);
+  }
+  case STRING:
+    return compile_string(ctx, a);
   case CONS: {
-    q_cons* c = (q_cons*)a;
-    switch(q_atom_type_of(c->car)) {
-    case SYMBOL: {
-       const char* s = q_symbol_string(c->car);
-       if(strcmp("if", s) == 0 ) {
-       }
-       } break;
+    q_cons *cons = (q_cons *)a;
+    if (cons->cdr == NULL) {
+      return NULL;
     }
-  }break;
-  case SYMBOL:
-     //| lea rdx, [rsp]
-     //| mov64 rsi, a>>TAG_BITS
-     //| call_extern q_env_lookup
-     dasm_put(Dst, 6, (unsigned int)(a>>TAG_BITS), (unsigned int)((a>>TAG_BITS)>>32));
-     dasm_put(Dst, 16, (uint32_t)q_env_lookup, ((uint64_t)q_env_lookup)>>32);
-#line 71 "../src/compiler.dynasm"
-     //| lea rax, [rsp]
-     dasm_put(Dst, 22);
-#line 72 "../src/compiler.dynasm"
-     break;
+
+    if (q_equals(cons->car, SYM("quote"))) {
+      return gcc_jit_context_new_rvalue_from_long(ctx->ctx, ctx->atom_type,
+                                                  cons->cdr->car);
+    }
+    else if(q_equals(cons->car, SYM("cons"))) {
+      gcc_jit_rvalue *params[] = {
+        gcc_jit_context_new_rvalue_from_ptr( ctx->ctx, ctx->void_ptr, ctx->q_mem),
+        compile_atom(ctx, cons->cdr->car),
+        compile_atom(ctx, cons->cdr->cdr->car)
+      };
+
+      return gcc_jit_context_new_call(ctx->ctx, NULL, ctx->cons, 3, params);
+    }
+    else if(q_equals(cons->car, SYM("car"))) {
+      gcc_jit_rvalue* param = compile_atom(ctx, cons->cdr->car);
+      return gcc_jit_context_new_call(ctx->ctx, NULL, ctx->car, 1, &param);
+    }
+  }
+    return NULL;
   default:
-  //| mov64 rax, a
-  dasm_put(Dst, 32, (unsigned int)(a), (unsigned int)((a)>>32));
-#line 75 "../src/compiler.dynasm"
+    printf("idk how to deal with this: \n");
+    q_atom_print(stdout, a);
+    return NULL;
+  }
+}
+
+q_compiler* q_compiler_create(q_memory* mem) {
+  q_compiler* c = malloc(sizeof(q_compiler));
+  memset(c, 0, sizeof(q_compiler));
+  c->ctx = gcc_jit_context_acquire();
+  c->atom_type = gcc_jit_context_get_int_type(c->ctx, 8, 0);
+  gcc_jit_context_set_bool_option(c->ctx, GCC_JIT_BOOL_OPTION_DUMP_GENERATED_CODE, 1);
+  gcc_jit_context_set_str_option(c->ctx, GCC_JIT_STR_OPTION_PROGNAME, "quack");
+  gcc_jit_context_set_int_option(c->ctx, GCC_JIT_INT_OPTION_OPTIMIZATION_LEVEL, 1);
+  gcc_jit_type* char_array = gcc_jit_context_new_array_type(c->ctx, NULL, gcc_jit_context_get_type(c->ctx, GCC_JIT_TYPE_CHAR), 0);
+
+  gcc_jit_field *fields[2] = { gcc_jit_context_new_field(c->ctx, NULL, c->atom_type, "len"),
+    gcc_jit_context_new_field(c->ctx, NULL, char_array, "buf")};
+
+  c->string_type = gcc_jit_context_new_struct_type(c->ctx, NULL,
+                                                   "q_string", 2,
+                                                   fields);
+  c->env_get = env_get_native(c);
+  c->void_ptr = gcc_jit_context_get_type(c->ctx, GCC_JIT_TYPE_VOID_PTR);
+  c->q_mem = mem;
+  c->cons = compile_cons(c);
+
+  c->cons_type = gcc_jit_context_new_opaque_struct(c->ctx, NULL, "q_cons");
+
+  gcc_jit_field *cons_fields[] = {
+    gcc_jit_context_new_field(c->ctx, NULL, c->atom_type, "car"),
+    gcc_jit_context_new_field(c->ctx, NULL, gcc_jit_type_get_pointer(gcc_jit_struct_as_type(c->cons_type)), "cdr")
+  };
+  c->cons_params[0] = cons_fields[0];
+  c->cons_params[1] = cons_fields[1];
+  gcc_jit_struct_set_fields(c->cons_type, NULL, 2, cons_fields);
+
+  c->car = compile_car(c);
+
+  return c;
+}
+
+void q_compiler_destroy(q_compiler *c) {
+  gcc_jit_context_release(c->ctx);
+  free(c);
+}
+
+qmain_func q_compile(q_compiler* c, q_atom a)
+{
+  char buf[256];
+  snprintf(buf, sizeof(buf), "quackmain_%d", c->counter++);
+
+  gcc_jit_param *param =
+      gcc_jit_context_new_param(c->ctx, NULL, gcc_jit_context_get_type(c->ctx, GCC_JIT_TYPE_VOID_PTR), "env");
+  gcc_jit_function* fn = gcc_jit_context_new_function(c->ctx, NULL, GCC_JIT_FUNCTION_EXPORTED, c->atom_type, buf, 1, &param, 0);
+  assert(fn);
+  c->current_func = fn;
+  gcc_jit_rvalue* ret = compile_atom(c, a);
+  if(!ret) {
+    fprintf(stderr, "error: %s\n", gcc_jit_context_get_last_error(c->ctx));
+    return NULL;
   }
 
-  return q_ok;
-}
 
-main_func compile(q_atom a)
-{
-  dasm_State *d;
-  unsigned npc = 8;
-  unsigned nextpc = 0;
-  dasm_init(&d, DASM_MAXSECTION);
-  //|.globals lbl_
-enum {
-  lbl___imp__q_env_lookup,
-  lbl_q_main,
-  lbl__MAX
-};
-#line 87 "../src/compiler.dynasm"
-  void* labels[lbl__MAX];
-  dasm_setupglobal(&d, labels, lbl__MAX);
-  //|.actionlist q_actions
-static const unsigned char q_actions[40] = {
-  72,184,237,237,195,255,72,141,20,36,72,190,237,237,254,1,248,10,237,237,254,
-  0,252,255,21,244,10,72,141,4,36,255,72,184,237,237,255,248,11,255
-};
+  gcc_jit_block* block = gcc_jit_function_new_block(fn, "entry");
 
-#line 90 "../src/compiler.dynasm"
-  dasm_setup(&d, q_actions);
-  dasm_growpc(&d, npc);
-  dasm_State** Dst = &d;
-  //|.code
-  dasm_put(Dst, 20);
-#line 94 "../src/compiler.dynasm"
-  //|->q_main:
-  dasm_put(Dst, 37);
-#line 95 "../src/compiler.dynasm"
-  compile_atom(Dst, a);
-  //|ret
-  dasm_put(Dst, 4);
-#line 97 "../src/compiler.dynasm"
-  link_and_encode(&d);
-  dasm_free(&d);
-  return (main_func)labels[lbl_q_main];
+  gcc_jit_block_end_with_return(block, NULL, ret);
+
+  gcc_jit_result* result = gcc_jit_context_compile(c->ctx);
+  assert(result);
+
+  gcc_jit_function_dump_to_dot(fn, "flow.dot");
+
+  return (qmain_func)gcc_jit_result_get_code(result, buf);
 }

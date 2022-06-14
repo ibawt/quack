@@ -51,15 +51,16 @@ set(files
   src/cps.c
   )
 
+unset(CMAKE_C_IMPLICIT_INCLUDE_DIRECTORIES)
 add_executable(quack ${main} ${files})
 set_target_properties(quack PROPERTIES C_STANDARD 99)
-target_link_libraries(quack readline)
+target_link_libraries(quack readline gccjit)
 target_compile_options(quack PRIVATE -Wall -Wextra)
 target_compile_features(quack PRIVATE cxx_std_17)
 # # Add test cpp file
 add_executable( quack-tests t/test_main.cpp ${files})
 # # # Link test executable against gtest & gtest_main
 target_compile_features(quack-tests PRIVATE cxx_std_11)
-target_link_libraries(quack-tests gtest gtest_main)
+target_link_libraries(quack-tests gtest gtest_main gccjit)
 gtest_discover_tests(quack-tests)
-include_directories("src/" "vendor/luajit-2.0/dynasm")
+include_directories("src/" "/usr/lib/gcc/x86_64-linux-gnu/10/include/ ")
