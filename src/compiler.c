@@ -140,29 +140,28 @@ static gcc_jit_rvalue *compile_string(q_compiler *c, q_atom a) {
   return atom_from_ptr(c, a.pval);
 }
 
-static gcc_jit_function* define( q_compiler *c) {
+static gcc_jit_function *define(q_compiler *c) {
   gcc_jit_param *fn_param[] = {
-    gcc_jit_context_new_param(c->ctx, NULL, c->void_ptr, "env"),
-    gcc_jit_context_new_param(c->ctx, NULL, c->int_type, "symbol"),
-    gcc_jit_context_new_param(c->ctx, NULL, c->atom_type, "value")
-  };
+      gcc_jit_context_new_param(c->ctx, NULL, c->void_ptr, "env"),
+      gcc_jit_context_new_param(c->ctx, NULL, c->int_type, "symbol"),
+      gcc_jit_context_new_param(c->ctx, NULL, c->atom_type, "value")};
 
-  gcc_jit_function *fn = gcc_jit_context_new_function(c->ctx, NULL, GCC_JIT_FUNCTION_IMPORTED, c->atom_type, "q_env_define", 3, fn_param, 0);
+  gcc_jit_function *fn = gcc_jit_context_new_function(
+      c->ctx, NULL, GCC_JIT_FUNCTION_IMPORTED, c->atom_type, "q_env_define", 3,
+      fn_param, 0);
   return fn;
 }
 
-static gcc_jit_function *
-env_get(q_compiler *c) {
+static gcc_jit_function *env_get(q_compiler *c) {
   gcc_jit_param *fn_params[] = {
       gcc_jit_context_new_param(
           c->ctx, NULL, gcc_jit_context_get_type(c->ctx, GCC_JIT_TYPE_VOID_PTR),
           "env"),
       gcc_jit_context_new_param(c->ctx, NULL, c->int_type, "key")};
 
-  gcc_jit_function *fn =
-      gcc_jit_context_new_function(c->ctx, NULL, GCC_JIT_FUNCTION_IMPORTED,
-                                   c->atom_type, "q_env_lookup", 2, fn_params, 0);
-
+  gcc_jit_function *fn = gcc_jit_context_new_function(
+      c->ctx, NULL, GCC_JIT_FUNCTION_IMPORTED, c->atom_type, "q_env_lookup", 2,
+      fn_params, 0);
 
   return fn;
 }
@@ -267,13 +266,12 @@ static gcc_jit_rvalue *compile_atom(q_compiler *ctx, q_atom a) {
         gcc_jit_function_get_param(ctx->current_func, 0));
 
     gcc_jit_rvalue *params[] = {
-      env,
-      gcc_jit_context_new_rvalue_from_int(ctx->ctx, ctx->int_type, q_atom_symbol(a))
-    };
+        env, gcc_jit_context_new_rvalue_from_int(ctx->ctx, ctx->int_type,
+                                                 q_atom_symbol(a))};
     return gcc_jit_context_new_call(ctx->ctx, NULL, ctx->env_get, 2, params);
   }
-    case NIL:
-      return atom_from_ptr(ctx, NULL);
+  case NIL:
+    return atom_from_ptr(ctx, NULL);
   case STRING:
     return compile_string(ctx, a);
   case CONS: {
@@ -307,10 +305,10 @@ static gcc_jit_rvalue *compile_atom(q_compiler *ctx, q_atom a) {
       gcc_jit_rvalue *value = compile_atom(ctx, cons->cdr->cdr->car);
 
       gcc_jit_rvalue *params[] = {
-        gcc_jit_param_as_rvalue(gcc_jit_function_get_param(ctx->current_func, 0)),
-        gcc_jit_context_new_rvalue_from_int(ctx->ctx, ctx->int_type, name),
-        value
-      };
+          gcc_jit_param_as_rvalue(
+              gcc_jit_function_get_param(ctx->current_func, 0)),
+          gcc_jit_context_new_rvalue_from_int(ctx->ctx, ctx->int_type, name),
+          value};
       return gcc_jit_context_new_call(ctx->ctx, NULL, ctx->define, 3, params);
     }
   }
