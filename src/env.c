@@ -3,6 +3,7 @@
 #include "env.h"
 #include "map.h"
 #include "symbol.h"
+#include "types.h"
 
 struct q_env {
   struct q_env *parent;
@@ -21,18 +22,28 @@ void q_env_destroy(q_env *env) {
   free(env);
 }
 
-q_err q_env_define(q_env *e, q_symbol sym, q_atom value) {
+q_atom q_env_define(q_env *e, q_symbol sym, q_atom value) {
   e->map = q_map_define(e->map, sym, value);
-  return q_ok;
+  return make_boolean(true);
 }
 
-q_err q_env_lookup(q_env *e, q_symbol k, q_atom *ret) {
+static
+q_err lookup(q_env *e, q_symbol k, q_atom *ret) {
   for (; e; e = e->parent) {
     if (!q_map_lookup(e->map, k, ret)) {
       return q_ok;
     }
   }
   return q_fail;
+}
+
+q_atom q_env_lookup(q_env *e, q_symbol k) {
+  q_atom r;
+  if(Q_FAILED(lookup(e, k, &r))) {
+    return make_nil();
+  } else {
+    return r;
+  }
 }
 
 q_err q_env_update(q_env *e, q_symbol key, q_atom value) {

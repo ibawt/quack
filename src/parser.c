@@ -73,10 +73,11 @@ static q_err read_file(const char *filename, buffer *b) {
 }
 
 static q_err quote_atom(q_memory *mem, q_atom a, q_atom *ret) {
+  printf("quote atom\n");
   q_cons *cons = q_memory_alloc_cons(mem, a, NULL);
   cons = q_memory_alloc_cons(mem, make_symbol(q_symbol_create("quote")), cons);
 
-  *ret = make_cons(cons);
+  ret->pval = cons;
 
   return q_ok;
 }
@@ -114,7 +115,11 @@ static q_err parse_list(q_memory *mem, buffer *b, q_atom *ret) {
   }
   q_vec_destroy(list);
 
-  *ret = make_cons(head);
+  if(head) { 
+    ret->pval = head;
+  }else {
+    *ret = make_nil();
+  }
 
   return q_ok;
 }
@@ -240,6 +245,7 @@ static q_err read_atom(q_memory *mem, buffer *b, q_atom *ret) {
 
   if (string_equals("nil", b->data + b->pos, next_end)) {
     *ret = make_nil();
+
     return q_ok;
   } else if (string_equals("#t", b->data + b->pos, next_end)) {
     *ret = make_boolean(true);
@@ -296,8 +302,8 @@ static q_err parse_atom(q_memory *mem, buffer *b, q_atom *ret) {
         }
         q_cons *head = NULL;
         head = q_memory_alloc_cons(mem, a, head);
-        head = q_memory_alloc_cons(mem, q_symbol_create("splice"), head);
-        *ret = make_cons(head);
+        head = q_memory_alloc_cons(mem,  SYM("splice") , head);
+        ret->pval = head;
         return q_ok;
       } else {
         q_atom a;
@@ -305,8 +311,8 @@ static q_err parse_atom(q_memory *mem, buffer *b, q_atom *ret) {
           return 1;
         }
         q_cons *head = q_memory_alloc_cons(mem, a, NULL);
-        head = q_memory_alloc_cons(mem, q_symbol_create("unquote"), head);
-        *ret = make_cons(head);
+        head = q_memory_alloc_cons(mem, SYM("unquote"), head);
+        ret->pval = head;
         return q_ok;
       }
     } break;

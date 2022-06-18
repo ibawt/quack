@@ -1,4 +1,5 @@
 #include "memory.h"
+#include "types.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -94,6 +95,19 @@ q_string* q_memory_alloc_string(q_memory *m, char *b, size_t len)
   return s;
 }
 
+q_lambda *q_memory_alloc_lambda(q_memory *m, q_cons *args, q_cons *body)
+{
+  q_heap_node* hn = alloc(m, LAMBDA, sizeof(q_lambda) );
+
+  q_lambda* l = (q_lambda*)hn->buff;
+
+  memset(l, 0, sizeof(q_lambda));
+
+  l->args = args;
+  l->body = body;
+
+  return l;
+}
 q_bool q_memory_is_heap_object(q_atom a)
 {
   switch(q_atom_type_of(a)) {
@@ -109,7 +123,7 @@ q_bool q_memory_is_heap_object(q_atom a)
 void q_memory_mark(q_atom a)
 {
   if(q_memory_is_heap_object(a)) {
-    q_heap_node *n = ((q_heap_node*)(a - offsetof(q_heap_node, buff)));
+    q_heap_node *n = ((q_heap_node*)(a.pval - offsetof(q_heap_node, buff)));
     n->flags |= USED;
   }
 }

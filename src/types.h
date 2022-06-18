@@ -36,17 +36,15 @@ typedef enum {
   ENV
 } q_atom_type;
 
-
-
 typedef enum { USED = 1, LOCKED = 2 } q_heap_flag;
 
 #define BITMASK(x) ((1 << x) - 1)
 
 typedef enum {
+  TAG_NIL = 0,
   TAG_INTEGER = 1,
   TAG_BOOL = 2,
-  TAG_NIL = 3,
-  TAG_SYMBOL = 4
+  TAG_SYMBOL = 3
 } q_atom_tag;
 
 #define TAG_BITS 3
@@ -54,7 +52,7 @@ typedef enum {
 
 typedef int q_symbol;
 
-typedef uintptr_t q_atom;
+typedef union { uintptr_t ival; void* pval; } q_atom;
 
 q_bool q_atom_is_literal(q_atom);
 
@@ -69,6 +67,15 @@ typedef struct {
 } q_string;
 
 typedef struct {
+  const char* native_name;
+
+  q_cons* args;
+  q_cons* body;
+
+  void *fn_address;
+} q_lambda;
+
+typedef struct {
   q_atom_type type;
   size_t      size;
   q_heap_flag flags;
@@ -76,7 +83,7 @@ typedef struct {
   char        buff[];
 } q_heap_node;
 
-q_cons* q_atom_as_cons(q_atom a);
+q_atom q_atom_from_ptr(void* p);
 
 /* these names are all a mess */
 q_atom_type q_atom_type_of(q_atom a);
@@ -87,7 +94,8 @@ int64_t q_atom_integer(q_atom a);
 q_atom make_string(q_string *s);
 
 #define make_cons(q) ((q_atom)q)
-#define make_nil() TAG_NIL
+
+q_atom make_nil();
 
 q_atom make_boolean(q_bool b);
 

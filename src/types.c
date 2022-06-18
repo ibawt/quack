@@ -9,51 +9,64 @@ void q_init(void)
 }
 
 q_atom_type q_atom_type_of(q_atom a) {
-  switch (a & TAGMASK) {
+  switch (a.ival & TAGMASK) {
   case TAG_INTEGER:
     return NUMBER;
   case TAG_BOOL:
     return BOOLEAN;
-  case TAG_NIL:
-    return NIL;
   case TAG_SYMBOL:
     return SYMBOL;
   }
 
-  return ((q_heap_node *)(a - offsetof(q_heap_node, buff)))->type;
+  if( a.ival == 0) {
+    return NIL;
+  }
+
+  return ((q_heap_node *)(a.pval - offsetof(q_heap_node, buff)))->type;
 }
 
 q_atom make_integer(const int64_t i) {
-  return TAG_INTEGER | i << TAG_BITS;
+  q_atom v = {.ival = TAG_INTEGER | i << TAG_BITS};
+  return v;
 }
 
 int64_t q_atom_integer(q_atom a) {
   assert(q_atom_type_of(a) == NUMBER);
-  return a >> TAG_BITS;
+  return a.ival >> TAG_BITS;
 }
 
 q_bool q_atom_boolean(q_atom a) {
   assert(q_atom_type_of(a) == BOOLEAN);
-  return a >> TAG_BITS;
+  return a.ival >> TAG_BITS;
 }
 
 q_symbol q_atom_symbol(q_atom a) {
   assert(q_atom_type_of(a) == SYMBOL);
-  return a >> TAG_BITS;
+  return a.ival >> TAG_BITS;
 }
 
 q_string* q_atom_string(q_atom a)
 {
-  return (q_string*)a;
+  return (q_string*)a.pval;
 }
 
-q_atom make_string(q_string *s) { return (q_atom)s; }
+q_atom make_string(q_string *s) {
+  q_atom v = { .pval = s };
+  return v;
+}
+
 
 /* q_atom make_cons(q_cons *q) { return (q_atom)q; } */
 
-q_atom make_boolean(q_bool b) { return TAG_BOOL | b << TAG_BITS; }
+q_atom make_boolean(q_bool b) {
+  q_atom v = {.ival = TAG_BOOL | b << TAG_BITS };
+  return v;
+}
 
-q_atom make_symbol(q_symbol sym) { return TAG_SYMBOL | sym << TAG_BITS; }
+q_atom make_symbol(q_symbol sym) {
+  q_atom v = { .ival = TAG_SYMBOL | sym << TAG_BITS };
+  return v;
+}
 
 int q_atom_print(FILE* file, q_atom atom)
 {
@@ -64,11 +77,13 @@ int q_atom_print(FILE* file, q_atom atom)
   case CONS: {
     fputc('(', file);
     int n = 1;
-    for(q_cons* c = (q_cons*)atom ; c ; c = c->cdr) {
-      n += q_atom_print(file, c->car);
-      if(c->cdr) {
-        fputc(' ', file);
-        n++;
+    if( atom.pval) {
+      for (q_cons *c = (q_cons *)atom.pval; c; c = c->cdr) {
+        n += q_atom_print(file, c->car);
+        if (c->cdr) {
+          fputc(' ', file);
+          n++;
+        }
       }
     }
     fputc(')', file);
@@ -107,8 +122,8 @@ q_bool q_equals(q_atom a, q_atom b)
 
   switch(type_a) {
   case CONS: {
-    q_cons *pa = (q_cons*)a;
-    q_cons *pb = (q_cons*)b;
+    q_cons *pa = (q_cons*)a.pval;
+    q_cons *pb = (q_cons*)b.pval;
     for(;;) {
       if(pa && pb) {
         if (!q_equals(pa->car, pb->car)) {
@@ -124,16 +139,16 @@ q_bool q_equals(q_atom a, q_atom b)
     }
   } break;
   case STRING:
-    return q_string_equals((q_string*)a, (q_string*)b);
+    return q_string_equals((q_string*)a.pval, (q_string*)b.pval);
   case NIL:
     return true;
   default:
-    return a == b;
+    return a.ival == b.ival;
   }
 }
 
 q_cons *q_atom_as_cons(q_atom a) {
-  return (q_cons*)a;
+  return (q_cons*)a.pval;
 }
 
 q_bool q_atom_is_literal(q_atom a)
@@ -160,4 +175,15 @@ size_t q_cons_length(q_cons *c)
   size_t i = 0;
   for( ; c ; c = c->cdr, ++i);
   return i;
+}
+
+q_atom make_nil()
+{
+  q_atom a = {.ival = TAG_NIL};
+  return a;
+}
+
+q_atom q_atom_from_ptr(void *p) {
+  q_atom a = {.pval = p};
+  return a;
 }

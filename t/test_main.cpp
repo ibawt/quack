@@ -1,6 +1,10 @@
 #include "gtest/gtest.h"
 #include "quack.h"
 #include "cps.h"
+#include "types.h"
+#include <string>
+#include <vector>
+#include <cstring>
 
 static void run_test_case(const char* s, q_atom b)
 {
@@ -33,7 +37,9 @@ protected:
     }
 public:
     q_atom make_string(const char *s) {
-        return (q_atom)q_memory_alloc_string(memory, (char*)s, strlen(s));
+
+      q_atom a = {.pval = q_memory_alloc_string(memory, (char*)s, strlen(s))};
+      return a;
     }
 
     q_atom make_list(std::vector<q_atom> vals) {
@@ -42,7 +48,7 @@ public:
         for(int i = vals.size() - 1 ; i >= 0 ; --i) {
             head = q_memory_alloc_cons(memory, vals[i], head);
         }
-        return (q_atom)head;
+        return q_atom_from_ptr(head);
     }
 };
 

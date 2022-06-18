@@ -8,6 +8,7 @@
 #include "compiler.h"
 #include "cps.h"
 #include "symbol.h"
+#include "types.h"
 
 struct q_engine {
   q_memory *memory;
@@ -44,13 +45,14 @@ q_err q_engine_eval(q_engine* e, q_atom a, q_atom *ret)
 q_err q_engine_eval_string(q_engine* e, const char *s, q_atom *ret)
 {
   q_atom atom;
-  printf("evaling: %s\n", s);
+  printf("before parsing: %s\n", s);
 
   q_err r = q_parse_buffer(e->memory, s, strlen(s), &atom);
   if (r) {
     printf("failed parsing!\n");
     return r;
   }
+  q_dbg("after parsing: ", atom);
 
   return q_engine_eval(e, atom, ret);
 }
