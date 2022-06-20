@@ -19,6 +19,7 @@ struct q_compiler {
   gcc_jit_type *int_type;
   gcc_jit_type *void_ptr;
   gcc_jit_struct *string_type;
+  gcc_jit_struct *lambda_type;
 
   gcc_jit_field *atom_fields[2];
 
@@ -42,6 +43,7 @@ struct q_compiler {
   lambda_list_node *lambda_list;
 };
 
+/* TODO: I think I don't have to do this  */
 static void push_lambda(q_compiler *c, q_lambda *l) {
   lambda_list_node *n = malloc(sizeof(lambda_list_node));
   memset(n, 0, sizeof(lambda_list_node));
@@ -70,9 +72,11 @@ static gcc_jit_rvalue *compile_lambda(q_compiler *c, q_atom args, q_atom body) {
 
   int len = q_cons_length(args.pval);
 
-  gcc_jit_param **params = malloc(sizeof(gcc_jit_param *) * len);
+  gcc_jit_param **params = malloc(sizeof(gcc_jit_param *) * len+1);
   q_cons *cons = args.pval;
-  for (int i = 0; i < len; ++i) {
+
+  params[0] = gcc_jit_context_new_param(c->ctx, NULL, c->void_ptr, "env");
+  for (int i = 1; i < len; ++i) {
     params[i] = gcc_jit_context_new_param(c->ctx, NULL, c->atom_type,
                                           q_symbol_string(cons->car.ival));
     cons = cons->cdr;
@@ -82,11 +86,12 @@ static gcc_jit_rvalue *compile_lambda(q_compiler *c, q_atom args, q_atom body) {
   snprintf(namebuf, sizeof(namebuf), "_lambda_%d", c->lambda_counter++);
 
   gcc_jit_function *fn =
-      gcc_jit_context_new_function(c->ctx, NULL, GCC_JIT_FUNCTION_INTERNAL,
-                                   c->atom_type, namebuf, len, params, 0);
+      gcc_jit_context_new_function(c->ctx, NULL, GCC_JIT_FUNCTION_EXPORTED,
+                                   c->atom_type, namebuf, len+1, params, 0);
 
   gcc_jit_block *b = gcc_jit_function_new_block(fn, "entry");
 
+  /* TODO: implement a compiler context stack thing so this is less terrible  */
   gcc_jit_function *old_fun = c->current_func;
   gcc_jit_block *old_b = c->current_block;
 
@@ -310,6 +315,20 @@ static gcc_jit_rvalue *compile_atom(q_compiler *ctx, q_atom a) {
           gcc_jit_context_new_rvalue_from_int(ctx->ctx, ctx->int_type, name),
           value};
       return gcc_jit_context_new_call(ctx->ctx, NULL, ctx->define, 3, params);
+    } else {
+      gcc_jit_rvalue* func = compile_atom(ctx, cons->car);
+
+      int len = q_cons_length(cons->cdr) + 1;
+      gcc_jit_rvalue **params = malloc(sizeof(gcc_jit_rvalue*) * len);
+      params[0] = gcc_jit_param_as_rvalue(gcc_jit_function_get_param(ctx->current_func, 0));
+
+      q_cons *arg = cons;
+      for( int i = 1 ; i < len ; ++i, arg = arg->cdr) {
+        assert(arg);
+        params[i] = compile_atom(ctx, arg->car);
+      }
+
+      return gcc_jit_context_new_call_through_ptr(ctx->ctx, NULL, func, len, params);
     }
   }
     return NULL;
@@ -371,6 +390,15 @@ q_compiler *q_compiler_create(q_memory *mem) {
   c->cdr = compile_cdr(c);
   c->define = define(c);
 
+  gcc_jit_field *lambda_fields[] = {
+    gcc_jit_context_new_field(c->ctx, NULL, c->void_ptr, "fn_address"),
+    gcc_jit_context_new_field(c->ctx, NULL, c->void_ptr, "native_name"),
+    gcc_jit_context_new_field(c->ctx, NULL, c->void_ptr, "args"),
+    gcc_jit_context_new_field(c->ctx, NULL, c->void_ptr, "body")
+  };
+
+  c->lambda_type = gcc_jit_context_new_struct_type(c->ctx, NULL, "q_lambda", 3, lambda_fields);
+
   return c;
 }
 
@@ -378,6 +406,18 @@ void q_compiler_destroy(q_compiler *c) {
   gcc_jit_context_release(c->ctx);
   destroy_lambdas(c);
   free(c);
+}
+
+static q_err populate_lambda_addresses(q_compiler *c, gcc_jit_result *result) {
+  lambda_list_node *node = c->lambda_list;
+
+  for(;node; node = node->next) {
+    node->item->fn_address = gcc_jit_result_get_code(result, node->item->native_name);
+    if(!node->item->fn_address) {
+      return q_fail;
+    }
+  }
+  return q_ok;
 }
 
 qmain_func q_compile(q_compiler *c, q_atom a) {
@@ -403,6 +443,10 @@ qmain_func q_compile(q_compiler *c, q_atom a) {
 
   gcc_jit_result *result = gcc_jit_context_compile(c->ctx);
   assert(result);
+  if( Q_FAILED(populate_lambda_addresses(c, result))) {
+    printf("failed to populate lambdas\n");
+    return NULL;
+  }
 
   return (qmain_func)gcc_jit_result_get_code(result, buf);
 }

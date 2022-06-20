@@ -67,12 +67,13 @@ typedef struct {
 } q_string;
 
 typedef struct {
-  const char* native_name;
+  void *fn_address;
+
+  const char *native_name;
 
   q_cons* args;
   q_cons* body;
 
-  void *fn_address;
 } q_lambda;
 
 typedef struct {

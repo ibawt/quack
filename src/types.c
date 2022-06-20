@@ -117,8 +117,9 @@ q_bool q_equals(q_atom a, q_atom b)
   q_atom_type type_a = q_atom_type_of(a);
   q_atom_type type_b = q_atom_type_of(b);
 
-  if( type_a != type_b)
+  if( type_a != type_b) {
     return false;
+  }
 
   switch(type_a) {
   case CONS: {

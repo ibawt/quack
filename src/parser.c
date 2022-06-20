@@ -73,7 +73,6 @@ static q_err read_file(const char *filename, buffer *b) {
 }
 
 static q_err quote_atom(q_memory *mem, q_atom a, q_atom *ret) {
-  printf("quote atom\n");
   q_cons *cons = q_memory_alloc_cons(mem, a, NULL);
   cons = q_memory_alloc_cons(mem, make_symbol(q_symbol_create("quote")), cons);
 
@@ -198,21 +197,14 @@ static q_err parse_integer(buffer *b, int64_t *ret) {
 static q_err next_token(const buffer *b, size_t *ret) {
   size_t len = 0;
   for (; len < b->len;) {
-    int c = b->data[b->pos + len];
-
-    if (c == EOF) {
-      if (len > 0) {
-        *ret = len;
-        return q_ok;
-      }
-      return q_fail;
-    } else if (!isspace(c) && c != ')') {
-      len++;
+    char c = b->data[b->pos + len];
+    if (isspace(c) || c == ')' || c == 0) {
+      goto END;
     } else {
-      *ret = len;
-      return q_ok;
+      len++;
     }
   }
+END:
   *ret = len;
   return q_ok;
 }

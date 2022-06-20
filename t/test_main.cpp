@@ -1,4 +1,6 @@
 #include "gtest/gtest.h"
+#include "engine.h"
+#include "memory.h"
 #include "quack.h"
 #include "cps.h"
 #include "types.h"
@@ -6,18 +8,6 @@
 #include <vector>
 #include <cstring>
 
-static void run_test_case(const char* s, q_atom b)
-{
-    q_memory *mem = q_memory_create();
-    q_atom a;
-
-    auto r = q_parse_buffer(mem, s, strlen(s), &a);
-    EXPECT_EQ(q_ok, r) << s;
-
-    ASSERT_TRUE(q_equals(a, b)) << s;
-
-    q_memory_destroy(mem);
-}
 
 struct testcase {
     const char *in;
@@ -36,8 +26,16 @@ protected:
         q_memory_destroy(memory);
     }
 public:
-    q_atom make_string(const char *s) {
+  void run_test_case(const char *s, q_atom b) {
+    q_atom a;
 
+    auto r = q_parse_buffer(memory, s, strlen(s), &a);
+    EXPECT_EQ(q_ok, r) << s;
+
+    ASSERT_TRUE(q_equals(a, b)) << s;
+  }
+
+    q_atom make_string(const char *s) {
       q_atom a = {.pval = q_memory_alloc_string(memory, (char*)s, strlen(s))};
       return a;
     }
@@ -59,7 +57,8 @@ TEST_F(Tester, Equals) {
     testcase cases[] = {
         { make_integer(5), make_integer(5)},
         { make_string("foo"), make_string("foo")},
-        { make_list({ make_integer(5)}), make_list({make_integer(5)})}
+        { make_list({ make_integer(5)}), make_list({make_integer(5)})},
+        { make_list({ SYM("quote"), SYM("foo" )}), make_list({ SYM("quote"), SYM("foo")}) },
     };
     testcase badcases[] = {
         { make_integer(4), make_integer(5)},
@@ -73,14 +72,31 @@ TEST_F(Tester, Equals) {
     }
 }
 
-TEST(Parse, Simple) {
+TEST_F(Tester, ParserTests) {
     testcase cases[] = {
         { "5", make_integer(5)},
         { "-5", make_integer(-5)},
         {"foo", make_symbol(q_symbol_create("foo"))},
+        { "\"foo\"", make_string("foo") },
+        { "'foo", make_list({ SYM("quote"), SYM("foo") } ) },
+        { "foo", SYM("foo")}
     };
 
     for(auto& i : cases ) {
         run_test_case( i.in, i.expected);
     }
 }
+
+class CompilerTest : public testing::Test {
+ protected:
+  q_engine *engine;
+ public:
+  CompilerTest() {
+    engine = q_engine_create();
+  }
+  ~CompilerTest() {
+    q_engine_destroy(engine);
+  }
+};
+
+

@@ -3,6 +3,10 @@
 
 #include "types.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 typedef struct q_memory q_memory;
 
 q_memory* q_memory_create(void);
@@ -17,6 +21,9 @@ void q_memory_mark_and_sweep(q_memory*);
 q_bool q_memory_is_heap_object(q_atom a);
 void q_memory_mark(q_atom a);
 
+#ifdef __cplusplus
+}
+#endif
 
 
 #endif
