@@ -24,7 +24,7 @@ int main(void) {
 
     printf("output: ");
     q_atom_print(stdout, atom);
-    printf("\n");
+    putc('\n', stdout);
     fflush(stdout);
   }
   q_engine_destroy(engine);

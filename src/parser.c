@@ -114,7 +114,7 @@ static q_err parse_list(q_memory *mem, buffer *b, q_atom *ret) {
   }
   q_vec_destroy(list);
 
-  if(head) { 
+  if(head) {
     ret->pval = head;
   }else {
     *ret = make_nil();

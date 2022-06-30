@@ -10,6 +10,8 @@
 #include "symbol.h"
 #include "types.h"
 
+#include <setjmp.h>
+
 struct q_engine {
   q_memory *memory;
   q_env    *env;
@@ -38,7 +40,23 @@ void q_engine_destroy(q_engine *e)
 q_err q_engine_eval(q_engine* e, q_atom a, q_atom *ret)
 {
   qmain_func f = q_compile(e->compiler, a);
-  *ret = f(e->env);
+  if(!f) {
+    return q_fail;
+  }
+  jmp_buf jmp_env;
+  int val;
+  val = setjmp(jmp_env);
+  if( val ) {
+    printf("Caught exception: %d\n", val);
+    ret->ival = val;
+    return q_fail;
+  } else {
+    q_atom jmp_env_atom = { .pval = jmp_env };
+
+    q_env_define(e->env, q_symbol_create("exception_env"), jmp_env_atom);
+
+    *ret = f(e->env);
+  }
   return q_ok;
 }
 

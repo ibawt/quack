@@ -15,7 +15,7 @@ struct q_memory {
 static void clear_allocations(q_memory *m) {
   node *n = m->allocations;
   node *t;
-  for (; n;) {
+  while (n) {
     t = n;
     n = n->next;
     free(t);

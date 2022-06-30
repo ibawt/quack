@@ -3,6 +3,7 @@
 #include "memory.h"
 #include "symbol.h"
 #include "types.h"
+#include <setjmp.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -102,6 +103,10 @@ static gcc_jit_rvalue *compile_lambda(q_compiler *c, q_atom args, q_atom body) {
 
   for (q_cons *cons = body.pval; cons; cons = cons->cdr) {
     e = compile_atom(c, cons->car);
+    assert(e);
+    if(!e) {
+      return NULL;
+    }
   }
 
   gcc_jit_block_end_with_return(b, NULL, e);
@@ -215,6 +220,30 @@ static gcc_jit_function *compile_cons(q_compiler *c) {
   return fn;
 }
 
+q_atom throw(q_env *env, q_atom a) {
+  q_atom e = q_env_lookup(env, q_symbol_create("exception_env"));
+  assert( e.ival != 0);
+
+  longjmp(e.pval, a.ival);
+  return make_nil();
+}
+
+static gcc_jit_rvalue* compile_throw(q_compiler *c, gcc_jit_rvalue* e, gcc_jit_rvalue* r) {
+  gcc_jit_param *throw_params[] = {
+    gcc_jit_context_new_param(c->ctx, NULL, c->void_ptr, "env"),
+    gcc_jit_context_new_param(c->ctx, NULL, c->atom_type, "a")
+  };
+
+  gcc_jit_function* fn = gcc_jit_context_new_function(c->ctx, NULL, GCC_JIT_FUNCTION_IMPORTED, c->atom_type,"throw" ,
+                                                      2, throw_params, 0);
+
+  gcc_jit_rvalue* params[] = {
+    e, r
+  };
+
+  return gcc_jit_context_new_call(c->ctx, NULL, fn, 2, params);
+}
+
 static gcc_jit_function *compile_car(q_compiler *c) {
   gcc_jit_param *param =
       gcc_jit_context_new_param(c->ctx, NULL, c->atom_type, "a");
@@ -281,9 +310,6 @@ static gcc_jit_rvalue *compile_atom(q_compiler *ctx, q_atom a) {
     return compile_string(ctx, a);
   case CONS: {
     q_cons *cons = (q_cons *)a.pval;
-    if (cons->cdr == NULL) {
-      return NULL;
-    }
 
     if (q_equals(cons->car, SYM("quote"))) {
       return atom_from_long(ctx, cons->cdr->car.ival);
@@ -315,6 +341,10 @@ static gcc_jit_rvalue *compile_atom(q_compiler *ctx, q_atom a) {
           gcc_jit_context_new_rvalue_from_int(ctx->ctx, ctx->int_type, name),
           value};
       return gcc_jit_context_new_call(ctx->ctx, NULL, ctx->define, 3, params);
+    } else if (q_equals(cons->car, SYM("throw"))) {
+      gcc_jit_rvalue* arg = compile_atom(ctx, cons->cdr->car );
+
+      return compile_throw(ctx, gcc_jit_param_as_rvalue(gcc_jit_function_get_param(ctx->current_func, 0)), arg);
     } else {
       gcc_jit_rvalue* func = compile_atom(ctx, cons->car);
 
@@ -328,7 +358,24 @@ static gcc_jit_rvalue *compile_atom(q_compiler *ctx, q_atom a) {
         params[i] = compile_atom(ctx, arg->car);
       }
 
-      return gcc_jit_context_new_call_through_ptr(ctx->ctx, NULL, func, len, params);
+      func = (gcc_jit_rvalue_access_field(func, NULL, ctx->atom_fields[1]));
+
+      gcc_jit_rvalue* cast_to_lambda = gcc_jit_context_new_cast(ctx->ctx, NULL, func, gcc_jit_type_get_pointer(gcc_jit_struct_as_type(ctx->lambda_type)));
+
+      gcc_jit_lvalue* fn_address = gcc_jit_rvalue_dereference_field( cast_to_lambda, NULL, gcc_jit_struct_get_field(ctx->lambda_type, 0));
+
+      gcc_jit_type **t_params = malloc(sizeof(gcc_jit_param*) * len);
+      t_params[0] = ctx->void_ptr;
+
+      for(int i = 1 ; i < len ; ++i) {
+        t_params[i] = ctx->atom_type;
+      }
+
+      gcc_jit_type* fn_type = gcc_jit_context_new_function_ptr_type(ctx->ctx, NULL, ctx->atom_type, len, t_params, 0);
+
+      gcc_jit_rvalue* fn = gcc_jit_context_new_cast(ctx->ctx, NULL, gcc_jit_lvalue_as_rvalue(fn_address), fn_type);
+
+      return gcc_jit_context_new_call_through_ptr(ctx->ctx, NULL, fn, len, params);
     }
   }
     return NULL;
@@ -397,7 +444,7 @@ q_compiler *q_compiler_create(q_memory *mem) {
     gcc_jit_context_new_field(c->ctx, NULL, c->void_ptr, "body")
   };
 
-  c->lambda_type = gcc_jit_context_new_struct_type(c->ctx, NULL, "q_lambda", 3, lambda_fields);
+  c->lambda_type = gcc_jit_context_new_struct_type(c->ctx, NULL, "q_lambda", 4, lambda_fields);
 
   return c;
 }
@@ -431,13 +478,14 @@ qmain_func q_compile(q_compiler *c, q_atom a) {
       c->ctx, NULL, GCC_JIT_FUNCTION_EXPORTED, c->atom_type, buf, 1, &param, 0);
   assert(fn);
   c->current_func = fn;
+  gcc_jit_block *block = gcc_jit_function_new_block(fn, "entry");
+  c->current_block = block;
+
   gcc_jit_rvalue *ret = compile_atom(c, a);
   if (!ret) {
     fprintf(stderr, "error: %s\n", gcc_jit_context_get_last_error(c->ctx));
     return NULL;
   }
-
-  gcc_jit_block *block = gcc_jit_function_new_block(fn, "entry");
 
   gcc_jit_block_end_with_return(block, NULL, ret);
 
