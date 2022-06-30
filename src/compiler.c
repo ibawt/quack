@@ -220,18 +220,18 @@ static gcc_jit_function *compile_cons(q_compiler *c) {
   return fn;
 }
 
-q_atom throw(q_env *env, q_atom a) {
+q_atom throw(q_env *env, int a) {
   q_atom e = q_env_lookup(env, q_symbol_create("exception_env"));
   assert( e.ival != 0);
 
-  longjmp(e.pval, a.ival);
+  longjmp(e.pval, a);
   return make_nil();
 }
 
 static gcc_jit_rvalue* compile_throw(q_compiler *c, gcc_jit_rvalue* e, gcc_jit_rvalue* r) {
   gcc_jit_param *throw_params[] = {
     gcc_jit_context_new_param(c->ctx, NULL, c->void_ptr, "env"),
-    gcc_jit_context_new_param(c->ctx, NULL, c->atom_type, "a")
+    gcc_jit_context_new_param(c->ctx, NULL, c->int_type, "a")
   };
 
   gcc_jit_function* fn = gcc_jit_context_new_function(c->ctx, NULL, GCC_JIT_FUNCTION_IMPORTED, c->atom_type,"throw" ,
@@ -242,6 +242,47 @@ static gcc_jit_rvalue* compile_throw(q_compiler *c, gcc_jit_rvalue* e, gcc_jit_r
   };
 
   return gcc_jit_context_new_call(c->ctx, NULL, fn, 2, params);
+}
+
+static gcc_jit_rvalue* atom_to_int(q_compiler *c, gcc_jit_rvalue *in) {
+  in = gcc_jit_rvalue_access_field(in, NULL, c->atom_fields[0]);
+  return gcc_jit_context_new_binary_op(c->ctx, NULL, GCC_JIT_BINARY_OP_RSHIFT, c->int_type,in,
+                                       gcc_jit_context_new_rvalue_from_int(c->ctx, c->int_type,TAG_BITS)
+                                       );
+}
+
+static gcc_jit_rvalue* int_to_atom(q_compiler *c, gcc_jit_rvalue *in) {
+  gcc_jit_rvalue* a = gcc_jit_context_new_binary_op(
+      c->ctx, NULL, GCC_JIT_BINARY_OP_LSHIFT, c->int_type,in,
+      gcc_jit_context_new_rvalue_from_int(c->ctx, c->int_type, TAG_BITS));
+
+  gcc_jit_rvalue *b =  gcc_jit_context_new_binary_op(c->ctx, NULL, GCC_JIT_BINARY_OP_BITWISE_OR, c->int_type,
+                                                     gcc_jit_context_new_rvalue_from_int(c->ctx, c->int_type, TAG_INTEGER), a);
+
+  return gcc_jit_context_new_union_constructor(c->ctx, NULL, c->atom_type, c->atom_fields[0], b);
+}
+
+static gcc_jit_rvalue* compile_add(q_compiler *c, int num_values, gcc_jit_rvalue **values) {
+  char buf[256];
+
+  snprintf(buf, sizeof(buf), "_add_%d", c->lambda_counter++);
+  gcc_jit_function *func = gcc_jit_context_new_function(c->ctx, NULL, GCC_JIT_FUNCTION_ALWAYS_INLINE, c->atom_type, buf, 0, NULL, 0);
+
+
+  gcc_jit_block* entry = gcc_jit_function_new_block(func, "entry");
+
+  gcc_jit_lvalue* acc = gcc_jit_function_new_local(func, NULL, c->int_type, "acc");
+  gcc_jit_block_add_assignment(entry, NULL, acc, gcc_jit_context_zero(c->ctx, c->int_type));
+
+  for( int i = 0 ; i < num_values ; ++i) {
+    gcc_jit_rvalue *v = atom_to_int(c, values[i]);
+    gcc_jit_block_add_assignment_op(entry, NULL, acc, GCC_JIT_BINARY_OP_PLUS, v) ;
+  }
+  gcc_jit_rvalue* ret = int_to_atom(c, gcc_jit_lvalue_as_rvalue(acc));
+
+  gcc_jit_block_end_with_return(entry, NULL, ret);
+
+  return gcc_jit_context_new_call(c->ctx, NULL, func, 0, NULL); 
 }
 
 static gcc_jit_function *compile_car(q_compiler *c) {
@@ -345,7 +386,18 @@ static gcc_jit_rvalue *compile_atom(q_compiler *ctx, q_atom a) {
       gcc_jit_rvalue* arg = compile_atom(ctx, cons->cdr->car );
 
       return compile_throw(ctx, gcc_jit_param_as_rvalue(gcc_jit_function_get_param(ctx->current_func, 0)), arg);
-    } else {
+    }
+    else if(q_equals(cons->car, SYM("+"))) {
+      int len = q_cons_length(cons->cdr);
+      gcc_jit_rvalue** params = malloc(sizeof(gcc_jit_rvalue*)* len);
+      cons = cons->cdr;
+      for( int i = 0 ; i < len ; ++i, cons = cons->cdr) {
+        assert(cons);
+        params[i] =  compile_atom(ctx, cons->car);
+      }
+      return compile_add(ctx, len, params);
+    }
+    else {
       gcc_jit_rvalue* func = compile_atom(ctx, cons->car);
 
       int len = q_cons_length(cons->cdr) + 1;

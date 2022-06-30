@@ -113,6 +113,11 @@ q_bool q_equals(q_atom a, q_atom b);
 
 #define SYM(x) make_symbol( q_symbol_create( x) )
 
+typedef enum {
+  INVALID_TYPE    = 1,
+  NOT_ENOUGH_ARGS = 2,
+} q_exceptions;
+
 #ifdef __cplusplus
 }
 #endif

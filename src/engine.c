@@ -44,18 +44,21 @@ q_err q_engine_eval(q_engine* e, q_atom a, q_atom *ret)
     return q_fail;
   }
   jmp_buf jmp_env;
-  int val;
-  val = setjmp(jmp_env);
-  if( val ) {
-    printf("Caught exception: %d\n", val);
-    ret->ival = val;
-    return q_fail;
-  } else {
-    q_atom jmp_env_atom = { .pval = jmp_env };
-
-    q_env_define(e->env, q_symbol_create("exception_env"), jmp_env_atom);
-
-    *ret = f(e->env);
+  switch(setjmp(jmp_env)) {
+    case 0: {
+      q_atom jmp_env_atom = {.pval = jmp_env};
+      q_env_define(e->env, q_symbol_create("exception_env"), jmp_env_atom);
+      *ret = f(e->env);
+    } break;
+    case INVALID_TYPE:
+      printf("Invalid type!\n");
+      return q_fail;
+    case NOT_ENOUGH_ARGS:
+      printf("not enough arguments!\n");
+      return q_fail;
+    default:
+      printf("exception!\n");
+      return q_fail;
   }
   return q_ok;
 }
